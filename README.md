@@ -2,3 +2,4 @@
 
 - feat
 - fix
+- feat(README)

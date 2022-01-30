@@ -1,0 +1,61 @@
+name: github-release
+
+on:
+  push:
+    tags:
+      - v*
+
+jobs:
+  generate-changelog:
+    runs-on: ubuntu-latest
+    outputs:
+      release-body: ${{ steps.set-release-body.outputs.release-body }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog by git-cliff
+        id: git-cliff
+        uses: orhun/git-cliff-action@v1
+        with:
+          config: cliff.toml
+          args: -vv --current --strip header
+        env:
+          OUTPUT: CHANGES.md
+
+      - name: Set release body
+        id: set-release-body
+        shell: bash
+        run: |
+          r=$(cat ${{ steps.git-cliff.outputs.changelog }})
+          # Trim version and date
+          r="$(printf "$r" | tail -n +3)"
+          # Workaround for https://github.community/t/set-output-truncates-multiline-strings/16852
+          r="${r//'%'/'%25'}"
+          r="${r//$'\n'/'%0A'}"
+          r="${r//$'\r'/'%0D'}"
+          echo "::set-output name=release-body::$r"
+
+      - name: Show result
+        run: |
+          echo "$RELEASE_BODY"
+        env:
+          RELEASE_BODY: ${{ steps.set-release-body.outputs.release-body }}
+
+  release:
+    needs: generate-changelog
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v2
+
+      - name: Release to GitHub
+        run: |
+          echo "Release ${{ github.ref_name }}"
+          gh release create "${{ github.ref_name }}" \
+            --prerelease \
+            --notes "${{ needs.generate-changelog.outputs.release-body }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
